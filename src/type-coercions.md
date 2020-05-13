@@ -1,7 +1,8 @@
 # Type coercions
 
-Coercions are defined in [RFC 401]. [RFC 1558] then expanded on that.
-A coercion is implicit and has no syntax.
+Coercions are defined in [RFC 401]. [RFC 1558] then expanded on that. However,
+Least upper bound coercions are not described in an RFC. A coercion is implicit
+and has no syntax.
 
 ## Coercion sites
 
@@ -179,14 +180,13 @@ unsized coercion to `Foo<U>`.
 > has been stabilized, the traits themselves are not yet stable and therefore
 > can't be used directly in stable Rust.
 
-## LUB Coercion
+## Least upper bound coercions
 
-*Least upper bound coercion* (LUB coercion) is the type of coercion take place
-when several expressions of possibly different types need be unified to a
+*Least upper bound coercion* (LUB coercion) is the form of type coercion take
+place when several expressions of possibly different types need be unified to a
 single type. This happens in [match] arms, [if expressions] and [array literal
 expressions]. In LUB coercion, the compiler tries to find the least upper
-bound of given types. However, Least Upper Bound coercion is not described in
-any RFC.
+bound of given types.
 
 For example:
 
@@ -208,11 +208,12 @@ let bar = match 42 {
 
 let baz = [a, b, c];
 ```
-In this example, both `foo` and `bar` get the type
-`LubCoerce(typeof(a), typeof(a), typeof(c))` and `baz` get the type
+
+In this example, both `foo` and `bar` have the type
+`LubCoerce(typeof(a), typeof(a), typeof(c))` and `baz` have the type
 `[LubCoerce(typeof(a), typeof(b), typeof(c)); 3]`.
 
-Here is the pseudo code of `LubCoerce` in the rustc:
+LUB coercion is performed by the following algorithm:
 
 ```txt
 Lub(a: Type, b: Type):
@@ -222,16 +223,17 @@ Lub(a: Type, b: Type):
     && b != capturing Closure:
     return FnPtr
 
-  // Coerce(x, y) returns true when x can be coerced to y
+  // Coerce(x, y) returns true when x can be coerced to y by coercion described
+  // in previous sections of this page.
   if Coerce(b, a):
     return a
   if Coerce(a, b):
     return b
 
   // LubCoerce failed
-  emits error
+  emit type error
 
-LubCoerce(vars):
+LubCoerce(vars...):
   result = vars.get(0)
   for var in vars[1..]:
     result = Lub(result, var)
@@ -239,14 +241,15 @@ LubCoerce(vars):
 ```
 
 LUB coercion has the following properties:
+
 1. Order independent: e.g. `LubCoerce(ty0, ty1, ty2, ty3)` equals to
     `LubCoerce(ty1, ty0, ty4, ty3)`.
 2. `LubCoerce(ty0, ty1, ty2, ...)` equals to
     `LubCoerce(LubCoerce(ty0, ty1), ty2, ...)`
-3. `LubCoerce(ty0, ty1) == Some(ty2)` means both `ty0` and `ty1` can be coerced to
-    `ty2`.
+3. `LubCoerce(ty0, ty1) == Some(ty2)` means both `ty0` and `ty1` can be coerced
+    to `ty2`.
 
-Notice the feature No.3, it uses the word "means" rather than "if and only if".
+Note the feature No. 3, it uses the word "means" rather than "if and only if".
 That's because currently if `ty0` and `ty1` can be coerced to `ty2` and
 unfortunately `ty2` equals to neither `ty0` nor `ty1`, there are only one
 special situation where we can get `LubCoerce(ty0, ty1) == Some(ty2)`:
