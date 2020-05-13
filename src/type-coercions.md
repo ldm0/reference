@@ -3,9 +3,6 @@
 Coercions are defined in [RFC 401]. [RFC 1558] then expanded on that.
 A coercion is implicit and has no syntax.
 
-[RFC 401]: https://github.com/rust-lang/rfcs/blob/master/text/0401-coercions.md
-[RFC 1558]: https://github.com/rust-lang/rfcs/blob/master/text/1558-closure-to-fn-coercion.md
-
 ## Coercion sites
 
 A coercion can only occur at certain coercion sites in a program; these are
@@ -182,5 +179,109 @@ unsized coercion to `Foo<U>`.
 > has been stabilized, the traits themselves are not yet stable and therefore
 > can't be used directly in stable Rust.
 
-[`Unsize`]: ../std/marker/trait.Unsize.html
+## LUB Coercion
+
+*Least upper bound coercion* (LUB coercion) is the type of coercion take place
+when several expressions of possibly different types need be unified to a
+single type. This happens in [match] arms, [if expressions] and [array literal
+expressions]. In LUB coercion, the compiler tries to find the least upper
+bound of given types. However, Least Upper Bound coercion is not described in
+any RFC.
+
+For example:
+
+```rust
+# let (a, b, c) = (0, 1, 2);
+let foo = if true {
+    a
+} else if false {
+    b
+} else {
+    c
+};
+
+let bar = match 42 {
+    0 => a,
+    1 => b,
+    _ => c,
+};
+
+let baz = [a, b, c];
+```
+In this example, both `foo` and `bar` get the type
+`LubCoerce(typeof(a), typeof(a), typeof(c))` and `baz` get the type
+`[LubCoerce(typeof(a), typeof(b), typeof(c)); 3]`.
+
+Here is the pseudo code of `LubCoerce` in the rustc:
+
+```txt
+Lub(a: Type, b: Type):
+  if a == (FnDef | Closure)
+    && b == (FnDef | Closure)
+    && a != capturing Closure
+    && b != capturing Closure:
+    return FnPtr
+
+  // Coerce(x, y) returns true when x can be coerced to y
+  if Coerce(b, a):
+    return a
+  if Coerce(a, b):
+    return b
+
+  // LubCoerce failed
+  emits error
+
+LubCoerce(vars):
+  result = vars.get(0)
+  for var in vars[1..]:
+    result = Lub(result, var)
+  return result
+```
+
+LUB coercion has the following properties:
+1. Order independent: e.g. `LubCoerce(ty0, ty1, ty2, ty3)` equals to
+    `LubCoerce(ty1, ty0, ty4, ty3)`.
+2. `LubCoerce(ty0, ty1, ty2, ...)` equals to
+    `LubCoerce(LubCoerce(ty0, ty1), ty2, ...)`
+3. `LubCoerce(ty0, ty1) == Some(ty2)` means both `ty0` and `ty1` can be coerced to
+    `ty2`.
+
+Notice the feature No.3, it uses the word "means" rather than "if and only if".
+That's because currently if `ty0` and `ty1` can be coerced to `ty2` and
+unfortunately `ty2` equals to neither `ty0` nor `ty1`, there are only one
+special situation where we can get `LubCoerce(ty0, ty1) == Some(ty2)`:
+`LubCoerce((FnDef | Closure), (FnDef | Closure)) == Some(FnPtr)` (where Closure
+is non-capturing). You can check it with the pseudo code.
+
+It also worth mentioning code below compiles if and only if
+`LubCoerce(Ty, typeof(a), typeof(b)).is_some()`:
+
+```rust
+# #[derive(Clone, Copy)]
+# struct Ty;
+# let (a, b) = (Ty, Ty);
+let foo: Ty = if true {
+    a
+} else {
+    b
+};
+
+let bar: Ty = match true {
+    true => a,
+    false => b,
+};
+
+let baz: [Ty; 2] = [a, b];
+```
+
+That's because with expected type, the compiler checks
+`LubCoerce(expected, ty0, ty1, ty2...).is_some()` rather than
+`LubCoerce(ty0, ty1, ty2...) == expected`.
+
+[array literal expressions]: expressions/array-expr.md
+[if expressions]: expressions/if-expr.md
+[match]: expressions/match-expr.md
+[RFC 401]: https://github.com/rust-lang/rfcs/blob/master/text/0401-coercions.md
+[RFC 1558]: https://github.com/rust-lang/rfcs/blob/master/text/1558-closure-to-fn-coercion.md
 [`CoerceUnsized`]: ../std/ops/trait.CoerceUnsized.html
+[`Unsize`]: ../std/marker/trait.Unsize.html
