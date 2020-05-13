@@ -256,8 +256,10 @@ special situation where we can get `LubCoerce(ty0, ty1) == Some(ty2)`:
 `LubCoerce((FnDef | Closure), (FnDef | Closure)) == Some(FnPtr)` (where Closure
 is non-capturing). You can check it with the pseudo code.
 
-It also worth mentioning code below compiles if and only if
-`LubCoerce(Ty, typeof(a), typeof(b)).is_some()`:
+When an expression that performs LUB coercion has an expected type, the
+expected type is added to the list of types the coercion operates on. So,
+for example, in each of the following let statements, the coercion being
+performed is `LubCoerce(Ty, typeof(a), typeof(b))`.
 
 ```rust
 # #[derive(Clone, Copy)]
@@ -276,10 +278,6 @@ let bar: Ty = match true {
 
 let baz: [Ty; 2] = [a, b];
 ```
-
-That's because with expected type, the compiler checks
-`LubCoerce(expected, ty0, ty1, ty2...).is_some()` rather than
-`LubCoerce(ty0, ty1, ty2...) == expected`.
 
 [array literal expressions]: expressions/array-expr.md
 [if expressions]: expressions/if-expr.md
